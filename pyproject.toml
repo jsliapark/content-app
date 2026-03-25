@@ -23,8 +23,14 @@ dependencies = [
 [project.scripts]
 content-app = "content_app.cli:main"
 
+[tool.hatch.build.targets.sdist]
+include = ["src/content_app"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/content_app"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
