@@ -1,9 +1,8 @@
 from typing import Annotated, Literal, TypedDict
 
-# Note: Using custom append_list reducer (not add_messages) because these are plain lists, not LangChain Message objects
-def append_list(existing: list, new: list) -> list:
-    """Reducer that appends new items to existing list."""
-    return existing + new
+def append_list(existing: list | None, new: list | None) -> list:
+    """Reducer that appends new items to existing list. Handles None inputs."""
+    return (existing or []) + (new or [])
 
 
 class ContentState(TypedDict, total=False):
