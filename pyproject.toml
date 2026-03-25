@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "content-app"
+version = "0.1.0"
+description = "Agentic content generation app powered by LangGraph and brandvoice-mcp"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.49.0",
+    "langgraph>=0.3.0",
+    "mcp>=1.6.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "aiosqlite>=0.20.0",
+    "structlog>=24.0.0",
+    "click>=8.0.0",
+]
+
+
+[project.scripts]
+content-app = "content_app.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/content_app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (skip with '-m \"not integration\"')",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+]
