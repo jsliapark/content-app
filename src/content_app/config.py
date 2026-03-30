@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     anthropic_api_key: str
+    openai_api_key: str  # Required for brandvoice-mcp embeddings
 
     brandvoice_command: str = "uvx"
     brandvoice_args: list[str] = ["brandvoice-mcp"]
