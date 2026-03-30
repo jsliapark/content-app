@@ -4,6 +4,8 @@ from content_app.graph.state import ContentState
 from content_app.mcp.brandvoice import BrandvoiceClient
 from content_app.providers.protocol import LLMProvider
 
+from content_app.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,12 +29,14 @@ def create_nodes(client: BrandvoiceClient, provider: LLMProvider) -> dict:
         
         # If this is a retry, add feedback context
         if state.get("alignment_feedback"):
-            user_content += f"""
-            Your previous draft scored {state['alignment_score']}/100.
-            Feedback: {state['alignment_feedback']}
-            Previous draft: {state['previous_drafts'][-1]}
-
-            Please revise to better match the brand voice while addressing the feedback."""
+        
+            # String written to minimize whitespace
+            user_content += (
+                f"\n\nYour previous draft scored {state['alignment_score']}/100."
+                f"\nFeedback: {state['alignment_feedback']}"
+                f"\nPrevious draft: {state['previous_drafts'][-1]}"
+                f"\n\nPlease revise to better match the brand voice while addressing the feedback."
+            )
 
         messages = [
             {"role": "system", "content": state["voice_context"]},
@@ -52,7 +56,7 @@ def create_nodes(client: BrandvoiceClient, provider: LLMProvider) -> dict:
             feedback = alignment["feedback"]
             retry_count = state.get("retry_count", 0) + 1
             max_retries = state.get("max_retries", 3)
-            THRESHOLD = 70
+            THRESHOLD = get_settings().alignment_threshold
 
             if score >= THRESHOLD:
                 return {
