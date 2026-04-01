@@ -213,3 +213,26 @@ class TestFullPipeline:
 
         assert "45/100" in user_message
         assert "Way too informal, add more data points" in user_message
+
+
+class TestNodeEvents:
+    """node_start / node_end emissions for SSE (Phase 2)."""
+
+    async def test_fetch_voice_context_emits_start_end(self, mocker, mock_client, mock_provider, initial_state):
+        emit = mocker.AsyncMock()
+        nodes = create_nodes(mock_client, mock_provider, emit=emit)
+        await nodes["fetch_voice_context"](initial_state)
+
+        payloads = [c.args[0] for c in emit.call_args_list]
+        assert any(
+            p.get("type") == "node_start" and p.get("node") == "fetch_voice_context" for p in payloads
+        )
+        assert any(
+            p.get("type") == "node_end" and p.get("node") == "fetch_voice_context" for p in payloads
+        )
+
+    async def test_emit_skipped_when_none(self, mock_client, mock_provider, initial_state):
+        nodes = create_nodes(mock_client, mock_provider, emit=None)
+        await nodes["fetch_voice_context"](initial_state)
+        # no crash; provider still called
+        mock_client.get_voice_context.assert_called_once()
