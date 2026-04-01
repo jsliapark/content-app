@@ -1,12 +1,21 @@
-from langgraph.graph import StateGraph, START, END
-from content_app.graph.nodes import create_nodes
+from typing import Any
+
+from langgraph.graph import END, StateGraph
+
+from content_app.graph.nodes import EmitFn, create_nodes
 from content_app.graph.state import ContentState
 from content_app.mcp.brandvoice import BrandvoiceClient
 from content_app.providers.protocol import LLMProvider
 
-def build_graph(client: BrandvoiceClient, provider: LLMProvider) -> StateGraph:
-    """Build the content generation graph."""
-    nodes = create_nodes(client, provider)
+
+def build_graph(
+    client: BrandvoiceClient,
+    provider: LLMProvider,
+    *,
+    emit: EmitFn = None,
+) -> Any:
+    """Build and compile the content generation graph."""
+    nodes = create_nodes(client, provider, emit=emit)
     graph = StateGraph(ContentState)
 
     graph.add_node("fetch_voice_context", nodes["fetch_voice_context"])
