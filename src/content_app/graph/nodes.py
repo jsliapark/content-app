@@ -45,7 +45,11 @@ def create_nodes(
         if emit:
             await emit({"type": "node_start", "node": "generate_draft"})
         try:
-            user_content = _build_task_description(state)
+            user_content = (
+                "Do not include any preamble, meta-commentary, or description "
+                "of what you're about to write. Start directly with the content itself.\n\n"
+            )
+            user_content += _build_task_description(state)
 
             previous_drafts = state.get("previous_drafts", [])
             if state.get("alignment_feedback") and previous_drafts:
@@ -73,6 +77,8 @@ def create_nodes(
     async def check_alignment(state: ContentState) -> dict:
         if emit:
             await emit({"type": "node_start", "node": "check_alignment"})
+        alignment_score_emit: int | None = None
+        retry_count_emit: int | None = None
         try:
             try:
                 alignment = await client.check_alignment(state["draft"])
@@ -88,6 +94,9 @@ def create_nodes(
                 else:
                     status = "generating"
 
+                alignment_score_emit = score
+                retry_count_emit = retry_count
+
                 return {
                     "alignment_score": score,
                     "alignment_feedback": feedback,
@@ -99,7 +108,15 @@ def create_nodes(
                 return {"status": "failed"}
         finally:
             if emit:
-                await emit({"type": "node_end", "node": "check_alignment"})
+                end_payload: dict[str, Any] = {
+                    "type": "node_end",
+                    "node": "check_alignment",
+                }
+                if alignment_score_emit is not None:
+                    end_payload["alignment_score"] = alignment_score_emit
+                if retry_count_emit is not None:
+                    end_payload["retry_count"] = retry_count_emit
+                await emit(end_payload)
 
     return {
         "fetch_voice_context": fetch_voice_context,
