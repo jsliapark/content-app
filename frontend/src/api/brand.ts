@@ -29,6 +29,25 @@ export async function listSamples(): Promise<BrandSamplesResponse> {
   return res.json() as Promise<BrandSamplesResponse>
 }
 
+export async function deleteSamples(
+  body: { all: true } | { sample_ids: string[] },
+): Promise<BrandMutationResult> {
+  const payload =
+    'all' in body && body.all === true
+      ? { all: true }
+      : { sample_ids: (body as { sample_ids: string[] }).sample_ids }
+  const res = await fetch('/api/brand/samples/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Delete samples failed: ${res.status} ${text}`)
+  }
+  return res.json() as Promise<BrandMutationResult>
+}
+
 export async function ingestSamples(content: string): Promise<BrandMutationResult> {
   const res = await fetch('/api/brand/samples', {
     method: 'POST',

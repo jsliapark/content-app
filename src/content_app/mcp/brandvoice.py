@@ -93,6 +93,24 @@ class BrandvoiceClient:
             return parsed
         return {"result": parsed}
 
+    async def delete_samples(
+        self,
+        *,
+        sample_ids: list[str] | None,
+        delete_all: bool,
+    ) -> dict[str, Any]:
+        session = self._require_session()
+        if delete_all:
+            payload: dict[str, Any] = {"all": True}
+        else:
+            payload = {"sample_ids": list(sample_ids or [])}
+        result = await session.call_tool("delete_samples", payload)
+        text = result.content[0].text
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"result": parsed}
+
     async def check_alignment(self, content: str) -> dict[str, Any]:
         session = self._require_session()
 

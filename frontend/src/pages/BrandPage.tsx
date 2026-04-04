@@ -1,11 +1,17 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
+  deleteSamples,
   getBrandOverview,
   ingestSamples,
   setGuidelines,
 } from '../api/brand'
 import type { BrandProfile } from '../types/brand'
+
+type SampleListRow = {
+  id: string
+  excerpt: string
+}
 
 function asBrandProfile(p: unknown): BrandProfile {
   if (p && typeof p === 'object' && !Array.isArray(p)) {
@@ -28,30 +34,33 @@ function excerptOf(item: unknown): string {
   }
   if (item && typeof item === 'object') {
     const o = item as Record<string, unknown>
-    const t = o.text ?? o.content ?? o.excerpt ?? o.body
-    if (typeof t === 'string') {
-      return t.length > 100 ? `${t.slice(0, 100)}…` : t
+    const preview = o.content_preview ?? o.text ?? o.content ?? o.excerpt ?? o.body
+    if (typeof preview === 'string') {
+      return preview.length > 100 ? `${preview.slice(0, 100)}…` : preview
     }
   }
   const s = JSON.stringify(item)
   return s.length > 100 ? `${s.slice(0, 100)}…` : s
 }
 
-function normalizeSampleList(data: unknown): string[] {
-  if (Array.isArray(data)) {
-    return data.map((item) => excerptOf(item))
-  }
-  if (
-    data &&
-    typeof data === 'object' &&
-    'samples' in data &&
-    Array.isArray((data as { samples: unknown[] }).samples)
-  ) {
-    return (data as { samples: unknown[] }).samples.map((item) =>
-      excerptOf(item),
-    )
-  }
-  return []
+function parseSampleRows(data: unknown): SampleListRow[] {
+  const raw: unknown[] = Array.isArray(data)
+    ? data
+    : data &&
+        typeof data === 'object' &&
+        'samples' in data &&
+        Array.isArray((data as { samples: unknown[] }).samples)
+      ? (data as { samples: unknown[] }).samples
+      : []
+
+  return raw.map((item, i) => {
+    if (item && typeof item === 'object' && 'id' in item) {
+      const idVal = (item as Record<string, unknown>).id
+      const id = typeof idVal === 'string' ? idVal : String(idVal ?? i)
+      return { id, excerpt: excerptOf(item) }
+    }
+    return { id: `row-${i}`, excerpt: excerptOf(item) }
+  })
 }
 
 function profileSummaryEntries(profile: unknown): [string, unknown][] {
@@ -71,23 +80,30 @@ export function BrandPage() {
   const [saveBusy, setSaveBusy] = useState(false)
   const [ingestError, setIngestError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [removingId, setRemovingId] = useState<string | null>(null)
+  const [clearAllBusy, setClearAllBusy] = useState(false)
 
-  const sampleExcerpts = useMemo(
-    () => normalizeSampleList(samplesData),
-    [samplesData],
-  )
+  const sampleRows = useMemo(() => parseSampleRows(samplesData), [samplesData])
+
+  const applyOverview = useCallback((p: unknown, s: unknown) => {
+    const prof = asBrandProfile(p)
+    setProfile(prof)
+    setSamplesData(s)
+    setGuidelinesDraft(guidelinesFromProfile(prof))
+  }, [])
+
+  const refreshOverview = useCallback(async () => {
+    const { profile: p, samples: s } = await getBrandOverview()
+    applyOverview(p, s)
+  }, [applyOverview])
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
         const { profile: p, samples: s } = await getBrandOverview()
-        if (!cancelled) {
-          const prof = asBrandProfile(p)
-          setProfile(prof)
-          setSamplesData(s)
-          setGuidelinesDraft(guidelinesFromProfile(prof))
-        }
+        if (!cancelled) applyOverview(p, s)
       } catch {
         if (!cancelled) {
           setProfile({})
@@ -101,7 +117,7 @@ export function BrandPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [applyOverview])
 
   async function handleIngest(e: FormEvent) {
     e.preventDefault()
@@ -114,11 +130,7 @@ export function BrandPage() {
     try {
       await ingestSamples(ingestText)
       setIngestText('')
-      const { profile: p, samples: s } = await getBrandOverview()
-      const prof = asBrandProfile(p)
-      setProfile(prof)
-      setSamplesData(s)
-      setGuidelinesDraft(guidelinesFromProfile(prof))
+      await refreshOverview()
     } catch (err) {
       setIngestError(err instanceof Error ? err.message : 'Ingest failed')
     } finally {
@@ -132,15 +144,44 @@ export function BrandPage() {
     setSaveBusy(true)
     try {
       await setGuidelines(guidelinesDraft)
-      const { profile: p, samples: s } = await getBrandOverview()
-      const prof = asBrandProfile(p)
-      setProfile(prof)
-      setSamplesData(s)
-      setGuidelinesDraft(guidelinesFromProfile(prof))
+      await refreshOverview()
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setSaveBusy(false)
+    }
+  }
+
+  async function handleRemoveSample(id: string) {
+    setDeleteError(null)
+    setRemovingId(id)
+    try {
+      await deleteSamples({ sample_ids: [id] })
+      await refreshOverview()
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Remove failed')
+    } finally {
+      setRemovingId(null)
+    }
+  }
+
+  async function handleClearAllSamples() {
+    if (
+      !window.confirm(
+        'Remove all ingested samples? The learned profile is reset when none remain.',
+      )
+    ) {
+      return
+    }
+    setDeleteError(null)
+    setClearAllBusy(true)
+    try {
+      await deleteSamples({ all: true })
+      await refreshOverview()
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Clear failed')
+    } finally {
+      setClearAllBusy(false)
     }
   }
 
@@ -186,16 +227,42 @@ export function BrandPage() {
         {overviewLoading ? (
           <p className="mb-4 text-sm text-slate-500">Loading…</p>
         ) : (
-          <p className="mb-2 text-sm text-slate-400">
-            {sampleExcerpts.length} sample
-            {sampleExcerpts.length === 1 ? '' : 's'} ingested
-          </p>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-slate-400">
+              {sampleRows.length} sample
+              {sampleRows.length === 1 ? '' : 's'} ingested
+            </p>
+            {sampleRows.length > 0 ? (
+              <button
+                type="button"
+                disabled={clearAllBusy || removingId !== null}
+                onClick={() => void handleClearAllSamples()}
+                className="text-xs text-red-400 underline hover:text-red-300 disabled:opacity-50"
+              >
+                {clearAllBusy ? 'Clearing…' : 'Remove all'}
+              </button>
+            ) : null}
+          </div>
         )}
-        {sampleExcerpts.length > 0 ? (
-          <ul className="mb-4 max-h-48 space-y-2 overflow-y-auto rounded border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300">
-            {sampleExcerpts.map((ex, i) => (
-              <li key={i} className="border-b border-slate-800/80 pb-2 last:border-0">
-                {ex || '—'}
+        {deleteError ? (
+          <p className="mb-2 text-xs text-red-400">{deleteError}</p>
+        ) : null}
+        {sampleRows.length > 0 ? (
+          <ul className="mb-4 max-h-64 space-y-2 overflow-y-auto rounded border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300">
+            {sampleRows.map((row) => (
+              <li
+                key={row.id}
+                className="flex gap-3 border-b border-slate-800/80 pb-2 last:border-0"
+              >
+                <span className="min-w-0 flex-1 break-words">{row.excerpt || '—'}</span>
+                <button
+                  type="button"
+                  disabled={removingId === row.id || clearAllBusy}
+                  onClick={() => void handleRemoveSample(row.id)}
+                  className="shrink-0 text-red-400 hover:text-red-300 disabled:opacity-50"
+                >
+                  {removingId === row.id ? '…' : 'Remove'}
+                </button>
               </li>
             ))}
           </ul>
