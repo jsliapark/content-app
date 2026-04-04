@@ -3,7 +3,8 @@
 Agentic content generation: a **LangGraph** pipeline that pulls brand voice context from **[brandvoice-mcp](https://github.com/jinsungpark/brandvoice-mcp)** (stdio), drafts with **Claude**, checks alignment, and retries with feedback until the score clears the threshold or max retries.
 
 **Phase 1:** CLI + graph + SQLite + pytest (mocked MCP/LLM).  
-**Phase 2:** FastAPI + run registry + SSE (`/api/runs/.../events`) + snapshot; node-level **`node_start` / `node_end`** events on the event stream.
+**Phase 2:** FastAPI + run registry + SSE (`/api/runs/.../events`) + snapshot; node-level **`node_start` / `node_end`** events on the event stream.  
+**UI:** **React + TypeScript + Vite** app in `frontend/` — run form, **React Flow** pipeline visualizer, and live SSE updates (proxies `/api` to the backend).
 
 ---
 
@@ -11,6 +12,7 @@ Agentic content generation: a **LangGraph** pipeline that pulls brand voice cont
 
 - **Python 3.12+**
 - **[uv](https://github.com/astral-sh/uv)** for installs and running commands
+- **Node.js 20+** and **npm** (for the `frontend/` dev server and build)
 - **`uvx brandvoice-mcp`** available on your machine (same as brandvoice-mcp’s docs)
 - **`.env`** with API keys (see [Setup](#setup))
 
@@ -24,6 +26,12 @@ content-app/
 ├── uv.lock
 ├── .env.example
 ├── README.md
+├── frontend/                    # React + Vite UI (Tailwind, @xyflow/react)
+│   ├── package.json
+│   ├── vite.config.ts           # dev proxy: /api → http://localhost:8000
+│   ├── index.html
+│   ├── public/
+│   └── src/                     # App, RunForm, PipelineVisualizer, hooks, api/runs.ts
 ├── src/
 │   └── content_app/
 │       ├── __init__.py
@@ -110,6 +118,27 @@ The SSE handler replays from an in-memory **event history** (and short-polls unt
 
 ---
 
+## Run the frontend
+
+Start the API on **port 8000** first (see above). In another terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open the URL Vite prints (default **http://localhost:5173**). Browser calls to **`/api/...`** are proxied to **`http://localhost:8000`**, so the UI and API share the same origin during development.
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Vite dev server with HMR |
+| `npm run build` | Typecheck + production build to `frontend/dist/` |
+| `npm run preview` | Serve the production build locally |
+| `npm run lint` | ESLint |
+
+---
+
 ## Tests
 
 ```bash
@@ -132,11 +161,11 @@ User input (topic, platform, tone)
   → else retry (inject feedback + previous draft) until max_retries
 ```
 
-API runs use the same graph with an optional **`emit`** callback so each node emits **`node_start`** / **`node_end`** (plus **`run_started`** / **`run_complete`** from the runner).
+API runs use the same graph with an optional **`emit`** callback so each node emits **`node_start`** / **`node_end`** (plus **`run_started`** / **`run_complete`** from the runner). The **`frontend`** consumes **`POST /api/runs`**, **`GET /api/runs/{id}`**, and the **SSE** stream to drive the graph and content panel.
 
 ---
 
 ## Roadmap
 
-- **Phase 3:** React UI (pipeline visualizer, editor, alignment panel)  
+- **Phase 3:** Rich editor, alignment detail panel, auth / deployment hardening  
 - **Phase 4 (optional):** Gmail / Calendar MCP  
