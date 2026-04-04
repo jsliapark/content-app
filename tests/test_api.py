@@ -171,6 +171,51 @@ def test_brand_ingest_samples(mocker, client: TestClient) -> None:
     mock_inner.ingest_samples.assert_awaited_once_with("sample text here")
 
 
+def test_brand_delete_samples_all(mocker, client: TestClient) -> None:
+    mock_inner = mocker.AsyncMock()
+    mock_inner.delete_samples = AsyncMock(
+        return_value={"deleted_count": 2, "remaining_count": 0}
+    )
+    cm = mocker.MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=mock_inner)
+    cm.__aexit__ = AsyncMock(return_value=None)
+    mocker.patch("content_app.api.routes_brand.BrandvoiceClient", return_value=cm)
+
+    r = client.post("/api/brand/samples/delete", json={"all": True})
+    assert r.status_code == 200
+    assert r.json() == {"deleted_count": 2, "remaining_count": 0}
+    mock_inner.delete_samples.assert_awaited_once_with(
+        sample_ids=None,
+        delete_all=True,
+    )
+
+
+def test_brand_delete_samples_by_ids(mocker, client: TestClient) -> None:
+    mock_inner = mocker.AsyncMock()
+    mock_inner.delete_samples = AsyncMock(
+        return_value={"deleted_count": 1, "remaining_count": 4}
+    )
+    cm = mocker.MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=mock_inner)
+    cm.__aexit__ = AsyncMock(return_value=None)
+    mocker.patch("content_app.api.routes_brand.BrandvoiceClient", return_value=cm)
+
+    r = client.post(
+        "/api/brand/samples/delete",
+        json={"sample_ids": ["chunk-uuid-1"]},
+    )
+    assert r.status_code == 200
+    mock_inner.delete_samples.assert_awaited_once_with(
+        sample_ids=["chunk-uuid-1"],
+        delete_all=False,
+    )
+
+
+def test_brand_delete_samples_validation(client: TestClient) -> None:
+    r = client.post("/api/brand/samples/delete", json={})
+    assert r.status_code == 422
+
+
 def test_brand_set_guidelines(mocker, client: TestClient) -> None:
     mock_inner = mocker.AsyncMock()
     mock_inner.set_guidelines = AsyncMock(return_value={"ok": True})

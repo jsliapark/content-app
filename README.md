@@ -125,6 +125,7 @@ uv run uvicorn content_app.api.app:app --reload --host 0.0.0.0 --port 8000
 | `GET /api/brand/profile` | Voice profile (brandvoice-mcp) |
 | `GET /api/brand/samples` | List ingested samples |
 | `POST /api/brand/samples` | Ingest writing samples (JSON body: `content`) |
+| `POST /api/brand/samples/delete` | Delete samples: body `{"sample_ids":["…"]}` or `{"all": true}` (proxies brandvoice-mcp `delete_samples`) |
 | `PUT /api/brand/guidelines` | Update brand guidelines (JSON body: `guidelines`) |
 
 The SSE handler replays from an in-memory **event history** (and short-polls until `phase` is `complete` or `failed`). A per-run **asyncio.Queue** remains for compatibility with the runner; subscribers should use the SSE endpoint rather than reading the queue directly.

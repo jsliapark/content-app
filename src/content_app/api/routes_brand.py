@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 
-from content_app.api.schemas import GuidelinesRequest, IngestRequest
+from content_app.api.schemas import DeleteSamplesRequest, GuidelinesRequest, IngestRequest
 from content_app.mcp.brandvoice import BrandvoiceClient
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,16 @@ async def list_samples() -> dict[str, Any]:
 @router.post("/samples")
 async def ingest_samples(body: IngestRequest) -> dict[str, Any]:
     return await _with_brand_client(lambda c: c.ingest_samples(body.content))
+
+
+@router.post("/samples/delete")
+async def delete_samples(body: DeleteSamplesRequest) -> dict[str, Any]:
+    return await _with_brand_client(
+        lambda c: c.delete_samples(
+            sample_ids=body.sample_ids,
+            delete_all=body.delete_all,
+        )
+    )
 
 
 @router.put("/guidelines")
