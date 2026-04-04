@@ -20,6 +20,7 @@ dependencies = [
     "structlog>=24.0.0",
     "click>=8.0.0",
     "uvicorn[standard]>=0.32.0",
+    "tavily-python>=0.7.23",
 ]
 
 

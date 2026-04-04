@@ -1,6 +1,8 @@
 import logging
+from typing import Any
 
 from anthropic import AsyncAnthropic
+from anthropic.types import Message
 
 from content_app.config import get_settings
 
@@ -69,3 +71,26 @@ class ClaudeProvider:
         logger.debug("Claude response received", extra={"length": len(content)})
 
         return content
+
+    async def generate_with_tools(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+    ) -> Message:
+        """Call Claude with ``tool_use`` enabled; returns the full message for the agent loop."""
+        logger.debug(
+            "Calling Claude with tools",
+            extra={"model": self.model, "tool_count": len(tools)},
+        )
+        return await self.client.messages.create(
+            model=self.model,
+            system=system,
+            messages=messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )

@@ -3,9 +3,23 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from content_app.graph.state import ContentState
-from content_app.graph.nodes import create_nodes, ALIGNMENT_THRESHOLD
 from content_app.graph.builder import build_graph
+from content_app.graph.nodes import create_nodes
+from content_app.graph.state import ContentState
+
+
+def _draft_tool_message(
+    text: str = "This is a generated draft about AI trends.",
+) -> MagicMock:
+    tool_block = MagicMock()
+    tool_block.type = "tool_use"
+    tool_block.name = "draft_content"
+    tool_block.id = "toolu_test_01"
+    tool_block.input = {"content": text}
+    msg = MagicMock()
+    msg.stop_reason = "tool_use"
+    msg.content = [tool_block]
+    return msg
 
 
 @pytest.fixture
@@ -22,6 +36,9 @@ def mock_provider():
     """Create a mock ClaudeProvider."""
     provider = AsyncMock()
     provider.generate = AsyncMock(return_value="This is a generated draft about AI trends.")
+    provider.generate_with_tools = AsyncMock(
+        return_value=_draft_tool_message("This is a generated draft about AI trends.")
+    )
     return provider
 
 
@@ -64,8 +81,9 @@ class TestGenerateDraft:
         state = {**initial_state, "voice_context": "Write professionally."}
         result = await nodes["generate_draft"](state)
 
-        call_args = mock_provider.generate.call_args[0][0]
-        user_message = call_args[1]["content"]
+        gw = mock_provider.generate_with_tools
+        assert gw.await_count == 1
+        user_message = gw.call_args.kwargs["messages"][0]["content"]
         assert "Do not include any preamble" in user_message
         assert "Start directly with the content itself" in user_message
 
@@ -87,9 +105,7 @@ class TestGenerateDraft:
 
         await nodes["generate_draft"](state)
 
-        # Check that generate was called with messages containing feedback
-        call_args = mock_provider.generate.call_args[0][0]  # First positional arg (messages)
-        user_message = call_args[1]["content"]
+        user_message = mock_provider.generate_with_tools.call_args.kwargs["messages"][0]["content"]
 
         assert "55/100" in user_message
         assert "Too casual, needs more authority" in user_message
@@ -97,12 +113,32 @@ class TestGenerateDraft:
         assert "Please revise" in user_message
 
     async def test_handles_error_gracefully(self, mock_client, mock_provider, initial_state):
+        mock_provider.generate_with_tools = AsyncMock(side_effect=Exception("tool use failed"))
         mock_provider.generate = AsyncMock(side_effect=Exception("API rate limit"))
         nodes = create_nodes(mock_client, mock_provider)
         state = {**initial_state, "voice_context": "Write professionally."}
         result = await nodes["generate_draft"](state)
 
         assert result["status"] == "failed"
+
+    async def test_falls_back_when_agent_returns_failure_message(
+        self, mock_client, mock_provider, initial_state
+    ) -> None:
+        tb = MagicMock()
+        tb.type = "text"
+        tb.text = "Agent reached max iterations without calling draft_content."
+        bad_msg = MagicMock()
+        bad_msg.stop_reason = "end_turn"
+        bad_msg.content = [tb]
+        mock_provider.generate_with_tools = AsyncMock(return_value=bad_msg)
+        mock_provider.generate = AsyncMock(return_value="Fallback draft.")
+        nodes = create_nodes(mock_client, mock_provider)
+        state = {**initial_state, "voice_context": "Write professionally."}
+        result = await nodes["generate_draft"](state)
+
+        assert result["draft"] == "Fallback draft."
+        assert result["status"] == "checking"
+        mock_provider.generate.assert_awaited_once()
 
 
 class TestCheckAlignment:
@@ -162,8 +198,9 @@ class TestFullPipeline:
         assert result["retry_count"] == 1
         assert result["draft"] is not None
 
-        # Verify generate was called only once
-        assert mock_provider.generate.call_count == 1
+        # Verify agent path used once (draft_content tool)
+        assert mock_provider.generate_with_tools.await_count == 1
+        assert mock_provider.generate.await_count == 0
 
     async def test_retry_path_passes_on_second_try(self, mock_client, mock_provider, initial_state):
         """Scenario 2: First score below threshold, second passes."""
@@ -181,8 +218,8 @@ class TestFullPipeline:
         assert result["alignment_score"] == 80
         assert result["retry_count"] == 2
 
-        # Verify generate was called twice (initial + 1 retry)
-        assert mock_provider.generate.call_count == 2
+        assert mock_provider.generate_with_tools.await_count == 2
+        assert mock_provider.generate.await_count == 0
 
     async def test_failure_path_max_retries_exceeded(self, mock_client, mock_provider, initial_state):
         """Scenario 3: Max retries exceeded, all scores below threshold."""
@@ -197,8 +234,8 @@ class TestFullPipeline:
         assert result["alignment_score"] == 50
         assert result["retry_count"] == 3  # max_retries reached
 
-        # Verify generate was called 3 times (initial + 2 retries)
-        assert mock_provider.generate.call_count == 3
+        assert mock_provider.generate_with_tools.await_count == 3
+        assert mock_provider.generate.await_count == 0
 
     async def test_retry_injects_feedback_into_prompt(self, mock_client, mock_provider, initial_state):
         """Scenario 4: Verify feedback injection on retry."""
@@ -212,9 +249,8 @@ class TestFullPipeline:
         graph = build_graph(mock_client, mock_provider)
         await graph.ainvoke(initial_state)
 
-        # Check the second call to generate included feedback
-        second_call_messages = mock_provider.generate.call_args_list[1][0][0]
-        user_message = second_call_messages[1]["content"]
+        second_kw = mock_provider.generate_with_tools.call_args_list[1].kwargs
+        user_message = second_kw["messages"][0]["content"]
 
         assert "45/100" in user_message
         assert "Way too informal, add more data points" in user_message
@@ -241,6 +277,42 @@ class TestNodeEvents:
         await nodes["fetch_voice_context"](initial_state)
         # no crash; provider still called
         mock_client.get_voice_context.assert_called_once()
+
+    async def test_generate_draft_emits_agent_tool_calls(
+        self, mocker, mock_client, mock_provider, initial_state
+    ) -> None:
+        search = MagicMock()
+        search.type = "tool_use"
+        search.name = "web_search"
+        search.id = "tu_1"
+        search.input = {"query": "AI trends stats"}
+        msg1 = MagicMock()
+        msg1.stop_reason = "tool_use"
+        msg1.content = [search]
+        draft_b = MagicMock()
+        draft_b.type = "tool_use"
+        draft_b.name = "draft_content"
+        draft_b.id = "tu_2"
+        draft_b.input = {"content": "Final draft body."}
+        msg2 = MagicMock()
+        msg2.stop_reason = "tool_use"
+        msg2.content = [draft_b]
+        mock_provider.generate_with_tools = AsyncMock(side_effect=[msg1, msg2])
+
+        emit = mocker.AsyncMock()
+        nodes = create_nodes(mock_client, mock_provider, emit=emit)
+        state = {**initial_state, "voice_context": "Voice guidelines here."}
+        result = await nodes["generate_draft"](state)
+
+        assert result["draft"] == "Final draft body."
+        agent_events = [
+            c.args[0]
+            for c in emit.call_args_list
+            if c.args[0].get("type") == "agent_tool_call"
+        ]
+        assert len(agent_events) == 1
+        assert agent_events[0]["tool"] == "web_search"
+        assert agent_events[0]["input"] == {"query": "AI trends stats"}
 
     async def test_check_alignment_node_end_includes_score_and_retry_count(
         self, mocker, mock_client, mock_provider, initial_state
