@@ -1,6 +1,5 @@
-from typing import Any
-
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from content_app.graph.nodes import EmitFn, create_nodes
 from content_app.graph.state import ContentState
@@ -13,7 +12,7 @@ def build_graph(
     provider: LLMProvider,
     *,
     emit: EmitFn = None,
-) -> Any:
+) -> CompiledStateGraph:
     """Build and compile the content generation graph."""
     nodes = create_nodes(client, provider, emit=emit)
     graph = StateGraph(ContentState)

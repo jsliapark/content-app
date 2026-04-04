@@ -9,12 +9,12 @@ import {
 
 import '@xyflow/react/dist/style.css'
 
-import { PipelineNode } from './PipelineNode'
+import { PipelineNode, type PipelineNodeData } from './PipelineNode'
 
 const nodeTypes = { pipeline: PipelineNode }
 
 type Props = {
-  nodes: Node[]
+  nodes: Node<PipelineNodeData>[]
   edges: Edge[]
 }
 

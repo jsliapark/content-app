@@ -1,5 +1,6 @@
 import logging
 from contextlib import AsyncExitStack
+from typing import Any
 
 import json
 
@@ -41,30 +42,72 @@ class BrandvoiceClient:
         if self._stack:
             await self._stack.__aexit__(exc_type, exc_val, exc_tb)
 
-    async def get_voice_context(self, task_description: str) -> str:
+    def _require_session(self) -> ClientSession:
         if not self._session:
             raise RuntimeError("BrandvoiceClient not initialized. Use 'async with BrandvoiceClient() as client:'")
+        return self._session
 
-        result = await self._session.call_tool("get_voice_context", {
-            "task_description": task_description,
-        })
+    async def get_voice_context(self, task_description: str) -> str:
+        session = self._require_session()
+        result = await session.call_tool(
+            "get_voice_context",
+            {"task_description": task_description},
+        )
         return result.content[0].text
 
-    async def check_alignment(self, content: str) -> dict:
-        if not self._session:
-            raise RuntimeError("BrandvoiceClient not initialized. Use 'async with BrandvoiceClient() as client:'")
+    async def get_profile(self) -> dict[str, Any]:
+        session = self._require_session()
+        result = await session.call_tool("get_profile", {})
+        text = result.content[0].text
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"data": parsed}
 
-        result = await self._session.call_tool("check_alignment", {
+    async def list_samples(self) -> dict[str, Any]:
+        session = self._require_session()
+        result = await session.call_tool("list_samples", {})
+        text = result.content[0].text
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            return {"samples": parsed}
+        return {"result": parsed}
+
+    async def ingest_samples(self, content: str) -> dict[str, Any]:
+        session = self._require_session()
+        result = await session.call_tool("ingest_samples", {"content": content})
+        text = result.content[0].text
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"result": parsed}
+
+    async def set_guidelines(self, guidelines: str) -> dict[str, Any]:
+        session = self._require_session()
+        result = await session.call_tool("set_guidelines", {"guidelines": guidelines})
+        text = result.content[0].text
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"result": parsed}
+
+    async def check_alignment(self, content: str) -> dict[str, Any]:
+        session = self._require_session()
+
+        result = await session.call_tool("check_alignment", {
             "content": content,
         })
 
         try:
             text = result.content[0].text
             parsed = json.loads(text)
+            if not isinstance(parsed, dict):
+                raise ValueError("check_alignment JSON is not an object")
 
             # Handle both formats: {"score", "feedback"} or {"alignment_score", "verdict", "drift_flags"}
             if "alignment_score" in parsed:
-                # brandvoice-mcp format
                 drift_summary = ""
                 if "drift_flags" in parsed and parsed["drift_flags"]:
                     drift_summary = "; ".join(
@@ -75,22 +118,21 @@ class BrandvoiceClient:
                     "score": parsed["alignment_score"],
                     "feedback": drift_summary or parsed.get("verdict", "No feedback"),
                 }
-            elif "score" in parsed:
+            if "score" in parsed:
                 return {
                     "score": parsed["score"],
                     "feedback": parsed.get("feedback", "No feedback"),
                 }
-            else:
-                logger.warning(
-                    "check_alignment returned unexpected format: %s",
-                    text[:200] if len(text) > 200 else text,
-                )
-                return {
-                    "score": 0,
-                    "feedback": "Unable to check alignment — no voice profile configured",
-                }
+            logger.warning(
+                "check_alignment returned unexpected format: %s",
+                text[:200] if len(text) > 200 else text,
+            )
+            return {
+                "score": 0,
+                "feedback": "Unable to check alignment — no voice profile configured",
+            }
 
-        except (json.JSONDecodeError, IndexError, AttributeError) as e:
+        except (json.JSONDecodeError, IndexError, AttributeError, ValueError, TypeError) as e:
             logger.warning("Failed to parse check_alignment response: %s", e)
             return {
                 "score": 0,

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
 from content_app.api.schemas import StartRunRequest, StartRunResponse
+from content_app.db.sqlite import list_runs as db_list_runs
 from content_app.runner import (
     get_event_history,
     get_run_phase,
@@ -24,6 +25,12 @@ _SSE_POLL_S = 0.05
 async def create_run(body: StartRunRequest) -> StartRunResponse:
     run_id = await start_run_async(body.topic, body.platform, body.tone)
     return StartRunResponse(run_id=run_id)
+
+
+@router.get("", response_model=list[dict])
+async def list_all_runs(limit: int = 20) -> list[dict]:
+    """List recent runs from SQLite (newest first)."""
+    return await db_list_runs(limit=limit)
 
 
 @router.get("/{run_id}/events")

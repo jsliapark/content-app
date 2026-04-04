@@ -1,4 +1,9 @@
-import type { CreateRunResponse, RunInput, RunSnapshot } from '../types/pipeline'
+import type {
+  CreateRunResponse,
+  RunHistoryRow,
+  RunInput,
+  RunSnapshot,
+} from '../types/pipeline'
 
 export async function createRun(input: RunInput): Promise<CreateRunResponse> {
   const res = await fetch('/api/runs', {
@@ -19,4 +24,12 @@ export async function fetchRunSnapshot(runId: string): Promise<RunSnapshot> {
     throw new Error(`Failed to fetch run: ${res.status}`)
   }
   return res.json() as Promise<RunSnapshot>
+}
+
+export async function listRuns(limit = 20): Promise<RunHistoryRow[]> {
+  const res = await fetch(`/api/runs?limit=${limit}`)
+  if (!res.ok) {
+    throw new Error(`Failed to fetch runs: ${res.status}`)
+  }
+  return res.json() as Promise<RunHistoryRow[]>
 }

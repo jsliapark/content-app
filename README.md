@@ -2,9 +2,7 @@
 
 Agentic content generation: a **LangGraph** pipeline that pulls brand voice context from **[brandvoice-mcp](https://github.com/jinsungpark/brandvoice-mcp)** (stdio), drafts with **Claude**, checks alignment, and retries with feedback until the score clears the threshold or max retries.
 
-**Phase 1:** CLI + graph + SQLite + pytest (mocked MCP/LLM).  
-**Phase 2:** FastAPI + run registry + SSE (`/api/runs/.../events`) + snapshot; node-level **`node_start` / `node_end`** events on the event stream.  
-**UI:** **React + TypeScript + Vite** app in `frontend/` — run form, **React Flow** pipeline visualizer, and live SSE updates (proxies `/api` to the backend).
+**Phases 1–3 are complete:** CLI + LangGraph + SQLite + pytest; **FastAPI** with run registry, **SSE** (`/api/runs/.../events`), snapshots, and per-node **`node_start` / `node_end`** events; and a **React + TypeScript + Vite** UI (**react-router**) with three areas: **Pipeline** (run form, **React Flow** visualizer, live SSE), **Brand dashboard** (voice profile, samples ingest, guidelines via brandvoice-mcp), and **Run history** (recent runs from SQLite).
 
 ---
 
@@ -31,7 +29,15 @@ content-app/
 │   ├── vite.config.ts           # dev proxy: /api → http://localhost:8000
 │   ├── index.html
 │   ├── public/
-│   └── src/                     # App, RunForm, PipelineVisualizer, hooks, api/runs.ts
+│   └── src/
+│       ├── App.tsx                # Routes + nav
+│       ├── pages/                 # PipelinePage, BrandPage, HistoryPage
+│       ├── components/            # RunForm, PipelineVisualizer, ContentPanel, …
+│       ├── hooks/
+│       ├── api/
+│       │   ├── runs.ts
+│       │   └── brand.ts           # overview, profile, samples, guidelines
+│       └── types/
 ├── src/
 │   └── content_app/
 │       ├── __init__.py
@@ -41,7 +47,8 @@ content-app/
 │       ├── api/
 │       │   ├── app.py             # FastAPI factory + /health
 │       │   ├── schemas.py         # Request/response models
-│       │   └── routes_runs.py     # POST/GET runs, SSE events
+│       │   ├── routes_runs.py     # POST/GET runs, list runs, SSE events
+│       │   └── routes_brand.py    # brandvoice-mcp proxy (overview, profile, samples, guidelines)
 │       ├── graph/
 │       │   ├── state.py           # ContentState (TypedDict + reducers)
 │       │   ├── nodes.py           # create_nodes(..., emit=...)
@@ -101,7 +108,7 @@ Runs persist to SQLite (default `sqlite:///content_app.db`).
 
 ---
 
-## Run the HTTP API (Phase 2)
+## Run the HTTP API
 
 ```bash
 uv run uvicorn content_app.api.app:app --reload --host 0.0.0.0 --port 8000
@@ -111,8 +118,14 @@ uv run uvicorn content_app.api.app:app --reload --host 0.0.0.0 --port 8000
 |----------|-------------|
 | `GET /health` | Liveness |
 | `POST /api/runs` | Body: `{"topic","platform","tone"}` → `201` + `{ "run_id" }` (pipeline runs in a **background asyncio task**) |
+| `GET /api/runs` | List recent runs from SQLite (`?limit=20` default) |
 | `GET /api/runs/{run_id}/events` | **SSE** stream (JSON lines in `data:`); includes `run_started`, per-node `node_start` / `node_end`, `run_complete` or `run_failed` |
 | `GET /api/runs/{run_id}` | Snapshot: `phase`, `result` (if any), and `events` (history) |
+| `GET /api/brand/overview` | Voice **profile** + **samples** in one MCP session (used by the Brand page) |
+| `GET /api/brand/profile` | Voice profile (brandvoice-mcp) |
+| `GET /api/brand/samples` | List ingested samples |
+| `POST /api/brand/samples` | Ingest writing samples (JSON body: `content`) |
+| `PUT /api/brand/guidelines` | Update brand guidelines (JSON body: `guidelines`) |
 
 The SSE handler replays from an in-memory **event history** (and short-polls until `phase` is `complete` or `failed`). A per-run **asyncio.Queue** remains for compatibility with the runner; subscribers should use the SSE endpoint rather than reading the queue directly.
 
@@ -129,6 +142,8 @@ npm run dev
 ```
 
 Open the URL Vite prints (default **http://localhost:5173**). Browser calls to **`/api/...`** are proxied to **`http://localhost:8000`**, so the UI and API share the same origin during development.
+
+**Pages:** **Pipeline** (`/`) — start runs and watch the graph + SSE; **Brand** (`/brand`) — profile, samples, guidelines; **History** (`/history`) — past runs from the API.
 
 | Script | Description |
 |--------|-------------|
@@ -161,11 +176,11 @@ User input (topic, platform, tone)
   → else retry (inject feedback + previous draft) until max_retries
 ```
 
-API runs use the same graph with an optional **`emit`** callback so each node emits **`node_start`** / **`node_end`** (plus **`run_started`** / **`run_complete`** from the runner). The **`frontend`** consumes **`POST /api/runs`**, **`GET /api/runs/{id}`**, and the **SSE** stream to drive the graph and content panel.
+API runs use the same graph with an optional **`emit`** callback so each node emits **`node_start`** / **`node_end`** (plus **`run_started`** / **`run_complete`** from the runner). The **`frontend`** consumes **`POST /api/runs`**, **`GET /api/runs/{id}`**, and the **SSE** stream for the pipeline page; **`GET /api/runs`** and **`GET /api/brand/overview`** (and related brand routes) power history and the brand dashboard.
 
 ---
 
 ## Roadmap
 
-- **Phase 3:** Rich editor, alignment detail panel, auth / deployment hardening  
 - **Phase 4 (optional):** Gmail / Calendar MCP  
+- **Deployment / polish:** hosting, auth, richer editor and alignment UX as needed  

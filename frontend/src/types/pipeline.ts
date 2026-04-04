@@ -55,6 +55,13 @@ export type RunResult = {
   previous_drafts?: string[]
 }
 
+/** Row from GET /api/runs?limit=… (SQLite-backed) */
+export type RunHistoryRow = RunResult & {
+  run_id: string
+  created_at?: string | null
+  updated_at?: string | null
+}
+
 export type NodeVisualStatus =
   | 'idle'
   | 'running'
