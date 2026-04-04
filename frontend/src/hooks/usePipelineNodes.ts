@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { Edge, Node } from '@xyflow/react'
 
+import type { PipelineNodeData } from '../components/PipelineNode'
 import {
   BASE_PIPELINE_EDGES,
   NODE_LABELS,
@@ -10,7 +11,7 @@ import type { GraphNodeId, NodeVisualStatus } from '../types/pipeline'
 import type { PipelineState } from './useRunPipeline'
 
 export function usePipelineNodes(pipeline: PipelineState): {
-  nodes: Node[]
+  nodes: Node<PipelineNodeData>[]
   edges: Edge[]
 } {
   return useMemo(() => {
@@ -41,7 +42,7 @@ export function usePipelineNodes(pipeline: PipelineState): {
     }
 
     const ids = Object.keys(NODE_POSITIONS) as GraphNodeId[]
-    const nodes: Node[] = ids.map((id) => ({
+    const nodes: Node<PipelineNodeData>[] = ids.map((id) => ({
       id,
       type: 'pipeline',
       position: NODE_POSITIONS[id],

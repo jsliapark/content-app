@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from content_app.api.routes_brand import router as brand_router
 from content_app.api.routes_runs import router as runs_router
 
 
@@ -16,6 +17,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(runs_router, prefix="/api")
+    app.include_router(brand_router, prefix="/api")
 
     @app.get("/health")
     async def health() -> dict[str, str]:

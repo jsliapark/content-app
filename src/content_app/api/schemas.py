@@ -11,3 +11,11 @@ class StartRunRequest(BaseModel):
 
 class StartRunResponse(BaseModel):
     run_id: str
+
+
+class IngestRequest(BaseModel):
+    content: str = Field(..., min_length=1)
+
+
+class GuidelinesRequest(BaseModel):
+    guidelines: str = ""
