@@ -64,6 +64,11 @@ class TestGenerateDraft:
         state = {**initial_state, "voice_context": "Write professionally."}
         result = await nodes["generate_draft"](state)
 
+        call_args = mock_provider.generate.call_args[0][0]
+        user_message = call_args[1]["content"]
+        assert "Do not include any preamble" in user_message
+        assert "Start directly with the content itself" in user_message
+
         assert result["draft"] == "This is a generated draft about AI trends."
         assert result["previous_drafts"] == ["This is a generated draft about AI trends."]
         assert result["status"] == "checking"
@@ -236,3 +241,28 @@ class TestNodeEvents:
         await nodes["fetch_voice_context"](initial_state)
         # no crash; provider still called
         mock_client.get_voice_context.assert_called_once()
+
+    async def test_check_alignment_node_end_includes_score_and_retry_count(
+        self, mocker, mock_client, mock_provider, initial_state
+    ):
+        emit = mocker.AsyncMock()
+        mock_client.check_alignment = AsyncMock(
+            return_value={"score": 44, "feedback": "Too informal"}
+        )
+        nodes = create_nodes(mock_client, mock_provider, emit=emit)
+        state = {
+            **initial_state,
+            "draft": "Some draft text",
+            "retry_count": 0,
+        }
+        await nodes["check_alignment"](state)
+
+        end_events = [
+            c.args[0]
+            for c in emit.call_args_list
+            if c.args[0].get("type") == "node_end"
+            and c.args[0].get("node") == "check_alignment"
+        ]
+        assert len(end_events) == 1
+        assert end_events[0]["alignment_score"] == 44
+        assert end_events[0]["retry_count"] == 1
