@@ -89,6 +89,29 @@ class TestClaudeProvider:
         with pytest.raises(ValueError, match="Expected text block"):
             await provider.generate([{"role": "user", "content": "Hi"}])
 
+    @patch("content_app.providers.claude.AsyncAnthropic")
+    async def test_generate_with_tools_forwards_tools(self, mock_anthropic_class):
+        mock_client = AsyncMock()
+        mock_anthropic_class.return_value = mock_client
+        mock_response = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+        provider = ClaudeProvider()
+        tools = [{"name": "x", "input_schema": {"type": "object", "properties": {}}}]
+        messages = [{"role": "user", "content": "Hi"}]
+        out = await provider.generate_with_tools(
+            system="sys",
+            messages=messages,
+            tools=tools,
+        )
+
+        assert out is mock_response
+        mock_client.messages.create.assert_awaited_once()
+        kw = mock_client.messages.create.call_args.kwargs
+        assert kw["system"] == "sys"
+        assert kw["messages"] == messages
+        assert kw["tools"] == tools
+
 
 class TestOpenAIProvider:
     """Tests for OpenAIProvider stub."""

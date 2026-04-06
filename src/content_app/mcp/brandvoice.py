@@ -7,7 +7,7 @@ import json
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from content_app.config import get_settings
+from content_app.config import get_settings, parse_brandvoice_args
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class BrandvoiceClient:
         settings = get_settings()
         server_params = StdioServerParameters(
             command=settings.brandvoice_command,
-            args=settings.brandvoice_args,
+            args=parse_brandvoice_args(settings.brandvoice_args),
             env={
                 "ANTHROPIC_API_KEY": settings.anthropic_api_key,
                 "OPENAI_API_KEY": settings.openai_api_key,

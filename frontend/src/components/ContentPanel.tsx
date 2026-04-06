@@ -105,6 +105,45 @@ export function ContentPanel({ pipeline }: { pipeline: PipelineState }) {
           </p>
         </div>
       )}
+
+      {pipeline.phase === 'running' &&
+        pipeline.activeNode === 'generate_draft' &&
+        pipeline.events.some((e) => e.type === 'agent_tool_call') && (
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Agent steps
+            </span>
+            <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto font-mono text-[11px] text-slate-400">
+              {pipeline.events
+                .filter((e) => e.type === 'agent_tool_call')
+                .slice(-8)
+                .map((e, i) => {
+                  const label =
+                    e.tool === 'web_search'
+                      ? '🔍'
+                      : e.tool === 'get_writing_examples'
+                        ? '📝'
+                        : e.tool === 'draft_content'
+                          ? '✍️'
+                          : '⚙️'
+                  const hint =
+                    e.tool === 'web_search' &&
+                    typeof e.input?.query === 'string'
+                      ? e.input.query.slice(0, 80)
+                      : e.tool === 'get_writing_examples' &&
+                          typeof e.input?.topic === 'string'
+                        ? e.input.topic.slice(0, 80)
+                        : e.tool ?? 'tool'
+                  return (
+                    <li key={`${e.ts ?? ''}-${e.iteration ?? i}-${i}`}>
+                      {label} {e.tool} {e.iteration != null ? `#${e.iteration} ` : ''}
+                      <span className="text-slate-500">— {hint}</span>
+                    </li>
+                  )
+                })}
+            </ul>
+          </div>
+        )}
     </div>
   )
 }

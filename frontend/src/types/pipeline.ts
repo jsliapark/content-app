@@ -21,6 +21,10 @@ export type SSEEvent = {
   alignment_score?: number
   retry_count?: number
   error?: string
+  /** Draft agent tool step (during generate_draft) */
+  tool?: string
+  input?: Record<string, unknown>
+  iteration?: number
 }
 
 export type RunInput = {
