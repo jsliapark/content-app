@@ -1,0 +1,17 @@
+.venv
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+.mypy_cache
+htmlcov
+.coverage
+dist/
+frontend/node_modules/
+frontend/dist/
+*.db
+*.sqlite3
