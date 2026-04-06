@@ -1,8 +1,8 @@
 # content-app
 
-Agentic content generation: a **LangGraph** pipeline that pulls brand voice context from **[brandvoice-mcp](https://github.com/jinsungpark/brandvoice-mcp)** (stdio), drafts with **Claude**, checks alignment, and retries with feedback until the score clears the threshold or max retries.
+Agentic content generation: a **LangGraph** pipeline that pulls brand voice context from **[brandvoice-mcp](https://github.com/jinsungpark/brandvoice-mcp)** (stdio), drafts with a **ReAct agent** (Claude tool-use loop), checks alignment, and retries with feedback until the score clears the threshold or max retries.
 
-**Phases 1–3 are complete:** CLI + LangGraph + SQLite + pytest; **FastAPI** with run registry, **SSE** (`/api/runs/.../events`), snapshots, and per-node **`node_start` / `node_end`** events; and a **React + TypeScript + Vite** UI (**react-router**) with three areas: **Pipeline** (run form, **React Flow** visualizer, live SSE), **Brand dashboard** (voice profile, samples ingest, guidelines via brandvoice-mcp), and **Run history** (recent runs from SQLite).
+**Phases 1–3 are complete:** CLI + LangGraph + SQLite + pytest; **FastAPI** with run registry, **SSE** (`/api/runs/.../events`), snapshots, and per-node **`node_start` / `node_end`** events; and a **React + TypeScript + Vite** UI (**react-router**) with three areas: **Pipeline** (run form, **React Flow** visualizer, live SSE), **Brand dashboard** (voice profile, samples ingest, guidelines via brandvoice-mcp), and **Run history** (recent runs from SQLite). The draft node now runs a **ReAct tool-use loop** — the agent can call `web_search` (Tavily) and `get_writing_examples` before submitting the final post via `draft_content`.
 
 ---
 
@@ -49,9 +49,13 @@ content-app/
 │       │   ├── schemas.py         # Request/response models
 │       │   ├── routes_runs.py     # POST/GET runs, list runs, SSE events
 │       │   └── routes_brand.py    # brandvoice-mcp proxy (overview, profile, samples, guidelines)
+│       ├── agent/
+│       │   ├── executor.py        # run_draft_agent — ReAct tool-use loop
+│       │   ├── tools.py           # AGENT_TOOLS definitions (web_search, get_writing_examples, draft_content)
+│       │   └── handlers.py        # handle_web_search (Tavily), build_get_writing_examples_handler
 │       ├── graph/
 │       │   ├── state.py           # ContentState (TypedDict + reducers)
-│       │   ├── nodes.py           # create_nodes(..., emit=...)
+│       │   ├── nodes.py           # create_nodes(..., emit=...); generate_draft uses agent loop w/ fallback
 │       │   └── builder.py         # build_graph(..., emit=...)
 │       ├── providers/
 │       │   ├── protocol.py        # LLMProvider
@@ -67,7 +71,10 @@ content-app/
     ├── test_runner.py
     ├── test_providers.py
     ├── test_mcp.py
-    └── test_db.py
+    ├── test_db.py
+    ├── test_agent_executor.py
+    ├── test_agent_handlers.py
+    └── test_config.py
 ```
 
 The console script **`content-app`** points at `content_app.cli:main`.
@@ -88,7 +95,7 @@ Edit `.env` and set:
 | `ANTHROPIC_API_KEY` | Claude in **content-app** and (forwarded) **brandvoice-mcp** |
 | `OPENAI_API_KEY` | Forwarded to **brandvoice-mcp** for embeddings (Chroma / RAG) |
 
-Optional settings (see `.env.example`): `BRANDVOICE_COMMAND`, `BRANDVOICE_ARGS`, `DEFAULT_MODEL`, `MAX_RETRIES`, `ALIGNMENT_THRESHOLD`, `DATABASE_URL`, `LOG_LEVEL`.
+Optional settings (see `.env.example`): `BRANDVOICE_COMMAND`, `BRANDVOICE_ARGS`, `DEFAULT_MODEL`, `MAX_RETRIES`, `ALIGNMENT_THRESHOLD`, `DATABASE_URL`, `LOG_LEVEL`, `TAVILY_API_KEY` (enables `web_search` in the draft agent).
 
 **Voice profile:** Ingest writing samples in brandvoice-mcp for meaningful `get_voice_context` / `check_alignment`. Without a profile, alignment may be weak or generic; the MCP client normalizes `check_alignment` JSON (`alignment_score` / `drift_flags` vs `score` / `feedback`) and falls back safely on parse errors.
 
@@ -171,7 +178,11 @@ uv run pytest
 ```
 User input (topic, platform, tone)
   → fetch_voice_context   (brandvoice-mcp over stdio)
-  → generate_draft        (Claude via LLMProvider)
+  → generate_draft        (ReAct tool-use loop via ClaudeProvider.generate_with_tools)
+      ├─ [optional] web_search          → Tavily (requires TAVILY_API_KEY)
+      ├─ [optional] get_writing_examples → brandvoice-mcp RAG
+      └─ draft_content                  → final post (exits loop)
+      fallback: plain provider.generate() if agent fails or provider lacks tool support
   → check_alignment       (brandvoice-mcp; normalized to score + feedback)
   → score ≥ threshold? → done
   → else retry (inject feedback + previous draft) until max_retries
