@@ -1,8 +1,10 @@
 # content-app
 
+**[Live Demo](http://16.58.216.107/)**
+
 Agentic content generation: a **LangGraph** pipeline that pulls brand voice context from **[brandvoice-mcp](https://github.com/jinsungpark/brandvoice-mcp)** (stdio), drafts with a **ReAct agent** (Claude tool-use loop), checks alignment, and retries with feedback until the score clears the threshold or max retries.
 
-**Phases 1–3 are complete:** CLI + LangGraph + SQLite + pytest; **FastAPI** with run registry, **SSE** (`/api/runs/.../events`), snapshots, and per-node **`node_start` / `node_end`** events; and a **React + TypeScript + Vite** UI (**react-router**) with three areas: **Pipeline** (run form, **React Flow** visualizer, live SSE), **Brand dashboard** (voice profile, samples ingest, guidelines via brandvoice-mcp), and **Run history** (recent runs from SQLite). The draft node now runs a **ReAct tool-use loop** — the agent can call `web_search` (Tavily) and `get_writing_examples` before submitting the final post via `draft_content`.
+**Fully deployed on EC2.** CLI + LangGraph + SQLite + pytest; **FastAPI** with run registry, **SSE** (`/api/runs/.../events`), snapshots, and per-node **`node_start` / `node_end`** events; and a **React + TypeScript + Vite** UI (**react-router**) with three areas: **Pipeline** (run form, **React Flow** visualizer, live SSE), **Brand dashboard** (voice profile, samples ingest, guidelines via brandvoice-mcp), and **Run history** (recent runs from SQLite). The draft node now runs a **ReAct tool-use loop** — the agent can call `web_search` (Tavily) and `get_writing_examples` before submitting the final post via `draft_content`. Deployed via **Docker** (multi-stage build, nginx + uvicorn via supervisord) with a **GitHub Actions** CI/CD pipeline that auto-deploys on push to `main`.
 
 ---
 
@@ -24,6 +26,11 @@ content-app/
 ├── uv.lock
 ├── .env.example
 ├── README.md
+├── Dockerfile                   # Multi-stage build (Node → Python/nginx)
+├── docker-compose.yml           # Single-container deployment (port 80, SQLite volume)
+├── nginx.conf                   # Static SPA + /api/ proxy to uvicorn, SSE-safe
+├── supervisord.conf             # Manages nginx + uvicorn processes inside container
+├── .github/workflows/deploy.yml # CI/CD: push to main → SSH into EC2 → docker compose up --build
 ├── frontend/                    # React + Vite UI (Tailwind, @xyflow/react)
 │   ├── package.json
 │   ├── vite.config.ts           # dev proxy: /api → http://localhost:8000
@@ -39,6 +46,7 @@ content-app/
 │       │   └── brand.ts           # overview, profile, samples, guidelines
 │       └── types/
 ├── src/
+│   ├── main.py                  # FastAPI entry point for Docker (src.main:app)
 │   └── content_app/
 │       ├── __init__.py
 │       ├── cli.py                 # Click CLI → run_pipeline_blocking
@@ -93,7 +101,7 @@ Edit `.env` and set:
 | Variable | Purpose |
 |----------|---------|
 | `ANTHROPIC_API_KEY` | Claude in **content-app** and (forwarded) **brandvoice-mcp** |
-| `OPENAI_API_KEY` | Forwarded to **brandvoice-mcp** for embeddings (Chroma / RAG) |
+| `OPENAI_API_KEY` | **Required.** Forwarded to **brandvoice-mcp** for embeddings (Chroma / RAG) |
 
 Optional settings (see `.env.example`): `BRANDVOICE_COMMAND`, `BRANDVOICE_ARGS`, `DEFAULT_MODEL`, `MAX_RETRIES`, `ALIGNMENT_THRESHOLD`, `DATABASE_URL`, `LOG_LEVEL`, `TAVILY_API_KEY` (enables `web_search` in the draft agent).
 
@@ -118,7 +126,7 @@ Runs persist to SQLite (default `sqlite:///content_app.db`).
 ## Run the HTTP API
 
 ```bash
-uv run uvicorn content_app.api.app:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 | Endpoint | Description |
@@ -126,7 +134,8 @@ uv run uvicorn content_app.api.app:app --reload --host 0.0.0.0 --port 8000
 | `GET /health` | Liveness |
 | `POST /api/runs` | Body: `{"topic","platform","tone"}` → `201` + `{ "run_id" }` (pipeline runs in a **background asyncio task**) |
 | `GET /api/runs` | List recent runs from SQLite (`?limit=20` default) |
-| `GET /api/runs/{run_id}/events` | **SSE** stream (JSON lines in `data:`); includes `run_started`, per-node `node_start` / `node_end`, `run_complete` or `run_failed` |
+| `GET /api/runs/{run_id}/events` | **SSE** stream (polling-based, replays history then tails live); JSON lines in `data:` with `run_started`, `node_start` / `node_end`, `run_complete` / `run_failed` |
+| `GET /api/runs/{run_id}/stream` | **SSE** stream (queue-based, real-time with 30 s heartbeat); closes after final event |
 | `GET /api/runs/{run_id}` | Snapshot: `phase`, `result` (if any), and `events` (history) |
 | `GET /api/brand/overview` | Voice **profile** + **samples** in one MCP session (used by the Brand page) |
 | `GET /api/brand/profile` | Voice profile (brandvoice-mcp) |
@@ -192,7 +201,22 @@ API runs use the same graph with an optional **`emit`** callback so each node em
 
 ---
 
-## Roadmap
+## Deployment
 
-- **Phase 4 (optional):** Gmail / Calendar MCP  
-- **Deployment / polish:** hosting, auth, richer editor and alignment UX as needed  
+The app ships as a single Docker container running **nginx + uvicorn** via **supervisord**.
+
+```
+nginx (port 80)
+  ├─ static assets  →  /usr/share/nginx/html  (React SPA, built in Docker)
+  └─ /api/*         →  127.0.0.1:8000         (uvicorn, SSE-safe: no buffering, 600 s timeout)
+```
+
+**Build and run locally:**
+
+```bash
+docker compose up --build
+```
+
+The `app_data` Docker volume persists SQLite across restarts (`DATABASE_URL=sqlite:////data/content_app.db`).
+
+**CI/CD (GitHub Actions):** every push to `main` SSH's into the EC2 host, runs `git pull` + `docker compose up -d --build`, and prunes old images. Secrets required: `EC2_HOST`, `EC2_SSH_KEY`.
