@@ -11,28 +11,6 @@ from content_app.agent.tools import AGENT_TOOLS
 logger = logging.getLogger(__name__)
 
 
-def _assistant_blocks_to_api(content: Any) -> list[dict[str, Any]]:
-    """Serialize Anthropic assistant content blocks to API-shaped dicts."""
-    out: list[dict[str, Any]] = []
-    for block in content or []:
-        t = getattr(block, "type", None)
-        if t == "text":
-            out.append({"type": "text", "text": getattr(block, "text", "")})
-        elif t == "tool_use":
-            inp = getattr(block, "input", None)
-            if not isinstance(inp, dict):
-                inp = {}
-            out.append(
-                {
-                    "type": "tool_use",
-                    "id": getattr(block, "id", ""),
-                    "name": getattr(block, "name", ""),
-                    "input": inp,
-                }
-            )
-    return out
-
-
 async def run_draft_agent(
     *,
     provider: Any,
@@ -61,7 +39,6 @@ async def run_draft_agent(
 
         if stop == "tool_use":
             tool_results: list[dict[str, Any]] = []
-            assistant_payload = _assistant_blocks_to_api(blocks)
 
             for block in blocks:
                 if getattr(block, "type", None) != "tool_use":
@@ -103,7 +80,8 @@ async def run_draft_agent(
                     }
                 )
 
-            messages.append({"role": "assistant", "content": assistant_payload})
+            # Pass blocks back unchanged: Sonnet 5.5 rejects tool loops missing thinking blocks
+            messages.append({"role": "assistant", "content": response.content})
             messages.append({"role": "user", "content": tool_results})
             continue
 

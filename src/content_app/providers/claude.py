@@ -24,7 +24,7 @@ class ClaudeProvider:
             messages: List of message dicts with 'role' and 'content' keys.
                       The first message with role='system' is extracted as
                       the system prompt (Anthropic API requirement).
-            **kwargs: Options like max_tokens (default 4096), temperature, etc.
+            **kwargs: Options like max_tokens (default 16000).
 
         Returns:
             The generated text content.
@@ -50,24 +50,22 @@ class ClaudeProvider:
             },
         )
 
-        DEFAULT_MAX_TOKENS = 4096
-        DEFAULT_TEMPERATURE = 0.7
+        DEFAULT_MAX_TOKENS = 16000  # covers adaptive thinking + text on Sonnet 5.5
         response = await self.client.messages.create(
             model=self.model,
             messages=chat_messages,
             system=system_prompt or "",
             max_tokens=kwargs.get("max_tokens", DEFAULT_MAX_TOKENS),
-            temperature=kwargs.get("temperature", DEFAULT_TEMPERATURE),
         )
 
         if not response.content:
             raise ValueError("Claude returned empty response (no content blocks)")
 
-        first_block = response.content[0]
-        if first_block.type != "text":
-            raise ValueError(f"Expected text block, got {first_block.type}")
-
-        content = first_block.text
+        # Sonnet 5.5 thinks by default, so text may follow thinking blocks
+        content = "".join(b.text for b in response.content if b.type == "text")
+        if not content:
+            types = [b.type for b in response.content]
+            raise ValueError(f"Expected text block, got {types}")
         logger.debug("Claude response received", extra={"length": len(content)})
 
         return content
@@ -78,8 +76,7 @@ class ClaudeProvider:
         system: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
+        max_tokens: int = 16000,
     ) -> Message:
         """Call Claude with ``tool_use`` enabled; returns the full message for the agent loop."""
         logger.debug(
@@ -92,5 +89,4 @@ class ClaudeProvider:
             messages=messages,
             tools=tools,
             max_tokens=max_tokens,
-            temperature=temperature,
         )

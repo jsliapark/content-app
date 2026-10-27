@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     brandvoice_command: str = "uvx"
     brandvoice_args: str = "brandvoice-mcp"
 
-    default_model: str = "claude-sonnet-4-20250514"
+    default_model: str = "claude-sonnet-5-5"
     max_retries: int = 3
     alignment_threshold: int = 70
 
