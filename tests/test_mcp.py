@@ -161,3 +161,20 @@ async def test_tool_failures_raise(method, kwargs, is_error, content, message):
     client._session.call_tool.return_value = MagicMock(isError=is_error, content=content)
     with pytest.raises(RuntimeError, match=f"{method}: {message}"):
         await getattr(client, method)(**kwargs)
+
+
+async def test_alignment_preserves_full_feedback():
+    import json
+    from content_app.mcp.brandvoice import BrandvoiceClient
+    client = BrandvoiceClient()
+    client._session = AsyncMock()
+    flags = [{"category": "tone", "issue": f"issue {i}"} for i in range(4)]
+    client._session.call_tool.return_value = MagicMock(isError=False, content=[MagicMock(text=json.dumps({
+        "alignment_score": 45, "verdict": "off_brand", "drift_flags": flags,
+        "suggestions": ["Use simpler words", "Shorten sentences"],
+        "rewrite_hints": "Start with a concrete example",
+    }))])
+    result = await client.check_alignment("draft")
+    assert result == {"score": 45, "feedback":
+        "tone: issue 0; tone: issue 1; tone: issue 2; tone: issue 3; "
+        "Use simpler words; Shorten sentences; Start with a concrete example"}

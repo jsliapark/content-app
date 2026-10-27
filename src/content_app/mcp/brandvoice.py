@@ -139,11 +139,15 @@ class BrandvoiceClient:
                 if "drift_flags" in parsed and parsed["drift_flags"]:
                     drift_summary = "; ".join(
                         f"{d.get('category', 'unknown')}: {d.get('issue', '')}"
-                        for d in parsed["drift_flags"][:3]
+                        for d in parsed["drift_flags"]
                     )
+                feedback = [drift_summary or parsed.get("verdict", "No feedback")]
+                feedback.extend(parsed.get("suggestions") or [])
+                if parsed.get("rewrite_hints"):
+                    feedback.append(parsed["rewrite_hints"])
                 return {
                     "score": parsed["alignment_score"],
-                    "feedback": drift_summary or parsed.get("verdict", "No feedback"),
+                    "feedback": "; ".join(feedback),
                 }
             if "score" in parsed:
                 return {
