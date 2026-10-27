@@ -90,6 +90,22 @@ class TestClaudeProvider:
             await provider.generate([{"role": "user", "content": "Hi"}])
 
     @patch("content_app.providers.claude.AsyncAnthropic")
+    async def test_generate_skips_leading_thinking_block_and_sends_no_temperature(self, mock_anthropic_class):
+        mock_client = AsyncMock()
+        mock_anthropic_class.return_value = mock_client
+        thinking, text = MagicMock(), MagicMock()
+        thinking.type = "thinking"
+        text.type, text.text = "text", "Post body"
+        mock_response = MagicMock()
+        mock_response.content = [thinking, text]
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+        result = await ClaudeProvider().generate([{"role": "user", "content": "Hi"}])
+
+        assert result == "Post body"
+        assert "temperature" not in mock_client.messages.create.call_args.kwargs
+
+    @patch("content_app.providers.claude.AsyncAnthropic")
     async def test_generate_with_tools_forwards_tools(self, mock_anthropic_class):
         mock_client = AsyncMock()
         mock_anthropic_class.return_value = mock_client
