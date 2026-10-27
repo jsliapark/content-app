@@ -47,11 +47,11 @@ class BrandvoiceClient:
             raise RuntimeError("BrandvoiceClient not initialized. Use 'async with BrandvoiceClient() as client:'")
         return self._session
 
-    async def get_voice_context(self, task_description: str) -> str:
+    async def get_voice_context(self, task_description: str, platform: str = "general") -> str:
         session = self._require_session()
         result = await session.call_tool(
             "get_voice_context",
-            {"task_description": task_description},
+            {"task": task_description, "platform": platform},
         )
         return result.content[0].text
 
@@ -86,7 +86,7 @@ class BrandvoiceClient:
 
     async def set_guidelines(self, guidelines: str) -> dict[str, Any]:
         session = self._require_session()
-        result = await session.call_tool("set_guidelines", {"guidelines": guidelines})
+        result = await session.call_tool("set_guidelines", {"custom_instructions": guidelines})
         text = result.content[0].text
         parsed = json.loads(text)
         if isinstance(parsed, dict):
@@ -101,7 +101,7 @@ class BrandvoiceClient:
     ) -> dict[str, Any]:
         session = self._require_session()
         if delete_all:
-            payload: dict[str, Any] = {"all": True}
+            payload: dict[str, Any] = {"delete_all": True}
         else:
             payload = {"sample_ids": list(sample_ids or [])}
         result = await session.call_tool("delete_samples", payload)
@@ -111,11 +111,12 @@ class BrandvoiceClient:
             return parsed
         return {"result": parsed}
 
-    async def check_alignment(self, content: str) -> dict[str, Any]:
+    async def check_alignment(self, content: str, platform: str = "general") -> dict[str, Any]:
         session = self._require_session()
 
         result = await session.call_tool("check_alignment", {
             "content": content,
+            "platform": platform,
         })
 
         try:

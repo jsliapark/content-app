@@ -82,7 +82,7 @@ class TestBrandvoiceClient:
         assert result == "Voice context string"
         mock_session.call_tool.assert_called_once_with(
             "get_voice_context",
-            {"task_description": "Write a LinkedIn post"},
+            {"task": "Write a LinkedIn post", "platform": "general"},
         )
 
     @patch("content_app.mcp.brandvoice.stdio_client")
@@ -122,5 +122,21 @@ class TestBrandvoiceClient:
         assert result == {"score": 75, "feedback": "Good but could improve"}
         mock_session.call_tool.assert_called_once_with(
             "check_alignment",
-            {"content": "Some content to check"},
+            {"content": "Some content to check", "platform": "general"},
         )
+
+
+@pytest.mark.parametrize("method, kwargs, tool, payload", [
+    ("get_voice_context", {"task_description": "topic", "platform": "twitter"}, "get_voice_context", {"task": "topic", "platform": "twitter"}),
+    ("check_alignment", {"content": "draft", "platform": "blog"}, "check_alignment", {"content": "draft", "platform": "blog"}),
+    ("set_guidelines", {"guidelines": "Be clear"}, "set_guidelines", {"custom_instructions": "Be clear"}),
+    ("delete_samples", {"sample_ids": None, "delete_all": True}, "delete_samples", {"delete_all": True}),
+    ("delete_samples", {"sample_ids": ["id"], "delete_all": False}, "delete_samples", {"sample_ids": ["id"]}),
+])
+async def test_tool_arguments(method, kwargs, tool, payload):
+    from content_app.mcp.brandvoice import BrandvoiceClient
+    client = BrandvoiceClient()
+    client._session = AsyncMock()
+    client._session.call_tool.return_value = MagicMock(isError=False, content=[MagicMock(text='{}')])
+    await getattr(client, method)(**kwargs)
+    client._session.call_tool.assert_awaited_once_with(tool, payload)

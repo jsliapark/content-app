@@ -46,7 +46,7 @@ def create_nodes(
         try:
             task_description = _build_task_description(state)
             try:
-                voice_context = await client.get_voice_context(task_description)
+                voice_context = await client.get_voice_context(task_description, platform=state["platform"])
             except Exception as e:
                 logger.error(f"Error fetching voice context: {e}")
                 return {"status": "failed"}
@@ -89,7 +89,7 @@ def create_nodes(
 
             tool_handlers: dict[str, Any] = {
                 "web_search": handle_web_search,
-                "get_writing_examples": build_get_writing_examples_handler(client),
+                "get_writing_examples": build_get_writing_examples_handler(client, platform=state["platform"]),
             }
 
             draft: str | None = None
@@ -131,7 +131,7 @@ def create_nodes(
         retry_count_emit: int | None = None
         try:
             try:
-                alignment = await client.check_alignment(state["draft"])
+                alignment = await client.check_alignment(state["draft"], platform=state["platform"])
                 score = alignment["score"]
                 feedback = alignment["feedback"]
                 retry_count = state.get("retry_count", 0) + 1

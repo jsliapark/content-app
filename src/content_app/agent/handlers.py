@@ -39,13 +39,14 @@ async def handle_web_search(query: str) -> str:
 
 def build_get_writing_examples_handler(
     client: BrandvoiceClient,
+    platform: str = "general",
 ) -> Callable[[str], Awaitable[str]]:
     """Return a handler that pulls voice-context text for a topic-focused task."""
 
     async def get_writing_examples(topic: str) -> str:
         try:
             task = f"Find writing examples and voice patterns related to: {topic}"
-            return await client.get_voice_context(task)
+            return await client.get_voice_context(task, platform=platform)
         except Exception as exc:
             logger.warning("get_writing_examples failed: %s", exc)
             return "No relevant writing examples found."

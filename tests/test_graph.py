@@ -63,7 +63,10 @@ class TestFetchVoiceContext:
 
         assert result["voice_context"] == "Write in a professional, authoritative tone."
         assert result["status"] == "generating"
-        mock_client.get_voice_context.assert_called_once()
+        mock_client.get_voice_context.assert_called_once_with(
+            f"Write a {initial_state['platform']} post about {initial_state['topic']} with {initial_state['tone']} tone",
+            platform=initial_state["platform"],
+        )
 
     async def test_handles_error_gracefully(self, mock_client, mock_provider, initial_state):
         mock_client.get_voice_context = AsyncMock(side_effect=Exception("MCP connection failed"))
@@ -149,6 +152,7 @@ class TestCheckAlignment:
         nodes = create_nodes(mock_client, mock_provider)
         state = {**initial_state, "draft": "Some draft content"}
         result = await nodes["check_alignment"](state)
+        mock_client.check_alignment.assert_awaited_once_with(state["draft"], platform=state["platform"])
 
         assert result["alignment_score"] == 85
         assert result["alignment_feedback"] == "Great alignment"
