@@ -47,18 +47,26 @@ class BrandvoiceClient:
             raise RuntimeError("BrandvoiceClient not initialized. Use 'async with BrandvoiceClient() as client:'")
         return self._session
 
+    def _tool_text(self, tool_name: str, result: Any) -> str:
+        text = "\n".join(
+            block.text for block in result.content if getattr(block, "text", None)
+        )
+        if result.isError or not text:
+            raise RuntimeError(f"{tool_name}: {text or 'Empty tool response'}")
+        return text
+
     async def get_voice_context(self, task_description: str, platform: str = "general") -> str:
         session = self._require_session()
         result = await session.call_tool(
             "get_voice_context",
             {"task": task_description, "platform": platform},
         )
-        return result.content[0].text
+        return self._tool_text("get_voice_context", result)
 
     async def get_profile(self) -> dict[str, Any]:
         session = self._require_session()
         result = await session.call_tool("get_profile", {})
-        text = result.content[0].text
+        text = self._tool_text("get_profile", result)
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             return parsed
@@ -67,7 +75,7 @@ class BrandvoiceClient:
     async def list_samples(self) -> dict[str, Any]:
         session = self._require_session()
         result = await session.call_tool("list_samples", {})
-        text = result.content[0].text
+        text = self._tool_text("list_samples", result)
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             return parsed
@@ -78,7 +86,7 @@ class BrandvoiceClient:
     async def ingest_samples(self, content: str) -> dict[str, Any]:
         session = self._require_session()
         result = await session.call_tool("ingest_samples", {"content": content})
-        text = result.content[0].text
+        text = self._tool_text("ingest_samples", result)
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             return parsed
@@ -87,7 +95,7 @@ class BrandvoiceClient:
     async def set_guidelines(self, guidelines: str) -> dict[str, Any]:
         session = self._require_session()
         result = await session.call_tool("set_guidelines", {"custom_instructions": guidelines})
-        text = result.content[0].text
+        text = self._tool_text("set_guidelines", result)
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             return parsed
@@ -105,7 +113,7 @@ class BrandvoiceClient:
         else:
             payload = {"sample_ids": list(sample_ids or [])}
         result = await session.call_tool("delete_samples", payload)
-        text = result.content[0].text
+        text = self._tool_text("delete_samples", result)
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             return parsed
@@ -119,8 +127,8 @@ class BrandvoiceClient:
             "platform": platform,
         })
 
+        text = self._tool_text("check_alignment", result)
         try:
-            text = result.content[0].text
             parsed = json.loads(text)
             if not isinstance(parsed, dict):
                 raise ValueError("check_alignment JSON is not an object")

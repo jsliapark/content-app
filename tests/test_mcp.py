@@ -62,7 +62,7 @@ class TestBrandvoiceClient:
         mock_stdio.return_value = mock_stdio_cm
 
         # Mock the tool result
-        mock_result = MagicMock()
+        mock_result = MagicMock(isError=False)
         mock_content = MagicMock()
         mock_content.text = "Voice context string"
         mock_result.content = [mock_content]
@@ -102,7 +102,7 @@ class TestBrandvoiceClient:
         mock_stdio.return_value = mock_stdio_cm
 
         # Mock the tool result with JSON
-        mock_result = MagicMock()
+        mock_result = MagicMock(isError=False)
         mock_content = MagicMock()
         mock_content.text = json.dumps({"score": 75, "feedback": "Good but could improve"})
         mock_result.content = [mock_content]
@@ -140,3 +140,24 @@ async def test_tool_arguments(method, kwargs, tool, payload):
     client._session.call_tool.return_value = MagicMock(isError=False, content=[MagicMock(text='{}')])
     await getattr(client, method)(**kwargs)
     client._session.call_tool.assert_awaited_once_with(tool, payload)
+
+
+@pytest.mark.parametrize("method, kwargs", [
+    ("get_voice_context", {"task_description": "topic"}),
+    ("get_profile", {}), ("list_samples", {}),
+    ("ingest_samples", {"content": "sample"}),
+    ("set_guidelines", {"guidelines": "clear"}),
+    ("delete_samples", {"sample_ids": None, "delete_all": True}),
+    ("check_alignment", {"content": "draft"}),
+])
+@pytest.mark.parametrize("is_error, content, message", [
+    (True, [MagicMock(text="server failed")], "server failed"),
+    (False, [], "Empty tool response"),
+])
+async def test_tool_failures_raise(method, kwargs, is_error, content, message):
+    from content_app.mcp.brandvoice import BrandvoiceClient
+    client = BrandvoiceClient()
+    client._session = AsyncMock()
+    client._session.call_tool.return_value = MagicMock(isError=is_error, content=content)
+    with pytest.raises(RuntimeError, match=f"{method}: {message}"):
+        await getattr(client, method)(**kwargs)
