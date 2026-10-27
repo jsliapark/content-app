@@ -32,7 +32,8 @@ COPY src/ src/
 RUN uv sync --frozen --no-dev
 
 # Pre-fetch brandvoice-mcp so `uvx brandvoice-mcp` works offline at runtime
-RUN uv tool install brandvoice-mcp==0.2.0
+# mcp 2.x removed mcp.server.FastMCP, which brandvoice-mcp 0.2.0 imports
+RUN uv tool install brandvoice-mcp==0.2.0 --with "mcp<2"
 
 # ── Static frontend ──────────────────────────────────────────────────────────
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html

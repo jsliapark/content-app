@@ -8,6 +8,8 @@ services:
     environment:
       # Override the default relative path so SQLite persists to the volume
       DATABASE_URL: sqlite:////data/content_app.db
+      # Pin mcp<2 at runtime too: uvx resolves its own env (see Dockerfile)
+      BRANDVOICE_ARGS: '["--with","mcp<2","brandvoice-mcp==0.2.0"]'
     volumes:
       - app_data:/data
     restart: unless-stopped
