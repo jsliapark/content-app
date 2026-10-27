@@ -68,3 +68,14 @@ async def test_handle_web_search_tavily_error_graceful(mocker):
 
     out = await handle_web_search("q")
     assert "Web search failed" in out
+
+
+async def test_writing_examples_passes_platform():
+    from content_app.agent.handlers import build_get_writing_examples_handler
+    client = MagicMock()
+    client.get_voice_context = AsyncMock(return_value="examples")
+    handler = build_get_writing_examples_handler(client, platform="twitter")
+    assert await handler("topic") == "examples"
+    client.get_voice_context.assert_awaited_once_with(
+        "Find writing examples and voice patterns related to: topic", platform="twitter"
+    )

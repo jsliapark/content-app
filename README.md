@@ -2,7 +2,7 @@
 
 **[Live Demo](http://16.58.216.107/)**
 
-Agentic content generation: a **LangGraph** pipeline that pulls brand voice context from **[brandvoice-mcp](https://github.com/jinsungpark/brandvoice-mcp)** (stdio), drafts with a **ReAct agent** (Claude tool-use loop), checks alignment, and retries with feedback until the score clears the threshold or max retries.
+Agentic content generation: a **LangGraph** pipeline that pulls brand voice context from **[brandvoice-mcp](https://github.com/jinsungpark/brandvoice-mcp)** (stdio), drafts with a **ReAct agent** (Claude tool-use loop), checks alignment, and retries with feedback until the score reaches the threshold or the draft limit is reached.
 
 **Fully deployed on EC2.** CLI + LangGraph + SQLite + pytest; **FastAPI** with run registry, **SSE** (`/api/runs/.../events`), snapshots, and per-node **`node_start` / `node_end`** events; and a **React + TypeScript + Vite** UI (**react-router**) with three areas: **Pipeline** (run form, **React Flow** visualizer, live SSE), **Brand dashboard** (voice profile, samples ingest, guidelines via brandvoice-mcp), and **Run history** (recent runs from SQLite). The draft node now runs a **ReAct tool-use loop** — the agent can call `web_search` (Tavily) and `get_writing_examples` before submitting the final post via `draft_content`. Deployed via **Docker** (multi-stage build, nginx + uvicorn via supervisord) with a **GitHub Actions** CI/CD pipeline that auto-deploys on push to `main`.
 
@@ -103,7 +103,11 @@ Edit `.env` and set:
 | `ANTHROPIC_API_KEY` | Claude in **content-app** and (forwarded) **brandvoice-mcp** |
 | `OPENAI_API_KEY` | **Required.** Forwarded to **brandvoice-mcp** for embeddings (Chroma / RAG) |
 
+`ALIGNMENT_THRESHOLD` defaults to **70**. `MAX_RETRIES` caps the **total number of drafts**: the default of **3** means the first draft plus up to **2 redrafts**.
+
 Optional settings (see `.env.example`): `BRANDVOICE_COMMAND`, `BRANDVOICE_ARGS`, `DEFAULT_MODEL`, `MAX_RETRIES`, `ALIGNMENT_THRESHOLD`, `DATABASE_URL`, `LOG_LEVEL`, `TAVILY_API_KEY` (enables `web_search` in the draft agent).
+
+Samples are stored locally by brandvoice-mcp in `~/.brandvoice` (ChromaDB plus `profile.json`), but sample text is sent to the Anthropic API for style analysis and alignment, and to the OpenAI API for embeddings. Style analysis uses Claude with a heuristic fallback on API or parse errors. Alignment scores five dimensions: sentence structure, vocabulary, formality, tone, and rhetorical patterns; it also sends the draft text to Anthropic.
 
 **Voice profile:** Ingest writing samples in brandvoice-mcp for meaningful `get_voice_context` / `check_alignment`. Without a profile, alignment may be weak or generic; the MCP client normalizes `check_alignment` JSON (`alignment_score` / `drift_flags` vs `score` / `feedback`) and falls back safely on parse errors.
 
@@ -178,11 +182,13 @@ uv run pytest
 ```
 
 - Unit tests mock **BrandvoiceClient** and **Claude** where needed; no real subprocess or API calls.
-- The **`integration`** marker is registered for future opt-in tests (`uv run pytest -m integration`).
+- The **`integration`** contract test launches the real brandvoice-mcp stdio server with test models and temporary storage, without external API calls. It skips if `brandvoice_mcp` is not importable. With both packages available in the same environment, run `uv run pytest -m integration tests/test_mcp_contract.py`.
 
 ---
 
 ## Architecture
+
+The graph has three nodes: `fetch_voice_context`, `generate_draft`, and `check_alignment`. There is no human approval step; the final draft and alignment score are shown to the user.
 
 ```
 User input (topic, platform, tone)
@@ -194,7 +200,7 @@ User input (topic, platform, tone)
       fallback: plain provider.generate() if agent fails or provider lacks tool support
   → check_alignment       (brandvoice-mcp; normalized to score + feedback)
   → score ≥ threshold? → done
-  → else retry (inject feedback + previous draft) until max_retries
+  → else retry (inject feedback + previous draft) until the total draft limit (`MAX_RETRIES`) is reached
 ```
 
 API runs use the same graph with an optional **`emit`** callback so each node emits **`node_start`** / **`node_end`** (plus **`run_started`** / **`run_complete`** from the runner). The **`frontend`** consumes **`POST /api/runs`**, **`GET /api/runs/{id}`**, and the **SSE** stream for the pipeline page; **`GET /api/runs`** and **`GET /api/brand/overview`** (and related brand routes) power history and the brand dashboard.

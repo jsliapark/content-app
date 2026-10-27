@@ -62,7 +62,7 @@ class TestBrandvoiceClient:
         mock_stdio.return_value = mock_stdio_cm
 
         # Mock the tool result
-        mock_result = MagicMock()
+        mock_result = MagicMock(isError=False)
         mock_content = MagicMock()
         mock_content.text = "Voice context string"
         mock_result.content = [mock_content]
@@ -82,7 +82,7 @@ class TestBrandvoiceClient:
         assert result == "Voice context string"
         mock_session.call_tool.assert_called_once_with(
             "get_voice_context",
-            {"task_description": "Write a LinkedIn post"},
+            {"task": "Write a LinkedIn post", "platform": "general"},
         )
 
     @patch("content_app.mcp.brandvoice.stdio_client")
@@ -102,7 +102,7 @@ class TestBrandvoiceClient:
         mock_stdio.return_value = mock_stdio_cm
 
         # Mock the tool result with JSON
-        mock_result = MagicMock()
+        mock_result = MagicMock(isError=False)
         mock_content = MagicMock()
         mock_content.text = json.dumps({"score": 75, "feedback": "Good but could improve"})
         mock_result.content = [mock_content]
@@ -122,5 +122,59 @@ class TestBrandvoiceClient:
         assert result == {"score": 75, "feedback": "Good but could improve"}
         mock_session.call_tool.assert_called_once_with(
             "check_alignment",
-            {"content": "Some content to check"},
+            {"content": "Some content to check", "platform": "general"},
         )
+
+
+@pytest.mark.parametrize("method, kwargs, tool, payload", [
+    ("get_voice_context", {"task_description": "topic", "platform": "twitter"}, "get_voice_context", {"task": "topic", "platform": "twitter"}),
+    ("check_alignment", {"content": "draft", "platform": "blog"}, "check_alignment", {"content": "draft", "platform": "blog"}),
+    ("set_guidelines", {"guidelines": "Be clear"}, "set_guidelines", {"custom_instructions": "Be clear"}),
+    ("delete_samples", {"sample_ids": None, "delete_all": True}, "delete_samples", {"delete_all": True}),
+    ("delete_samples", {"sample_ids": ["id"], "delete_all": False}, "delete_samples", {"sample_ids": ["id"]}),
+])
+async def test_tool_arguments(method, kwargs, tool, payload):
+    from content_app.mcp.brandvoice import BrandvoiceClient
+    client = BrandvoiceClient()
+    client._session = AsyncMock()
+    client._session.call_tool.return_value = MagicMock(isError=False, content=[MagicMock(text='{}')])
+    await getattr(client, method)(**kwargs)
+    client._session.call_tool.assert_awaited_once_with(tool, payload)
+
+
+@pytest.mark.parametrize("method, kwargs", [
+    ("get_voice_context", {"task_description": "topic"}),
+    ("get_profile", {}), ("list_samples", {}),
+    ("ingest_samples", {"content": "sample"}),
+    ("set_guidelines", {"guidelines": "clear"}),
+    ("delete_samples", {"sample_ids": None, "delete_all": True}),
+    ("check_alignment", {"content": "draft"}),
+])
+@pytest.mark.parametrize("is_error, content, message", [
+    (True, [MagicMock(text="server failed")], "server failed"),
+    (False, [], "Empty tool response"),
+])
+async def test_tool_failures_raise(method, kwargs, is_error, content, message):
+    from content_app.mcp.brandvoice import BrandvoiceClient
+    client = BrandvoiceClient()
+    client._session = AsyncMock()
+    client._session.call_tool.return_value = MagicMock(isError=is_error, content=content)
+    with pytest.raises(RuntimeError, match=f"{method}: {message}"):
+        await getattr(client, method)(**kwargs)
+
+
+async def test_alignment_preserves_full_feedback():
+    import json
+    from content_app.mcp.brandvoice import BrandvoiceClient
+    client = BrandvoiceClient()
+    client._session = AsyncMock()
+    flags = [{"category": "tone", "issue": f"issue {i}"} for i in range(4)]
+    client._session.call_tool.return_value = MagicMock(isError=False, content=[MagicMock(text=json.dumps({
+        "alignment_score": 45, "verdict": "off_brand", "drift_flags": flags,
+        "suggestions": ["Use simpler words", "Shorten sentences"],
+        "rewrite_hints": "Start with a concrete example",
+    }))])
+    result = await client.check_alignment("draft")
+    assert result == {"score": 45, "feedback":
+        "tone: issue 0; tone: issue 1; tone: issue 2; tone: issue 3; "
+        "Use simpler words; Shorten sentences; Start with a concrete example"}

@@ -27,6 +27,7 @@ _RUN_QUEUE_END = _RunQueueEndSentinel()
 
 type RunQueueItem = SSEPayload | _RunQueueEndSentinel
 
+# shortcut: run state lives in process memory, lost on restart and not shared across workers; move to Redis or Postgres before running more than one worker
 _run_phase: dict[str, str] = {}  # "running" | "complete" | "failed"
 _event_history: dict[str, list[SSEPayload]] = {}
 _event_queues: dict[str, asyncio.Queue[RunQueueItem]] = {}
