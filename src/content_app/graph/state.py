@@ -13,7 +13,7 @@ class ContentState(TypedDict, total=False):
 
     # Pipeline config
     model: str                 # LLM model identifier (for model-agnostic support)
-    max_retries: int           # maximum number of retries for content generation
+    max_retries: int           # maximum total number of drafts (including the first)
     run_id: str                # unique ID for this pipeline run    
 
     # Voice context from brandvoice-mcp
